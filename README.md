@@ -43,23 +43,23 @@ I spent a few weeks on this before figuring it out. Most of that time I was fixa
 
 "Should not exist" made me think of imaginary numbers. `i = sqrt(-1)`. That was wrong.
 
-I also noticed the SOF marker has Component ID = 0, which is invalid per the JPEG spec. The Color Space field is 65535 (Uncalibrated). There are duplicate JFIF headers. Each of these is a "number that shouldnt exist" in some sense. None of them were the flag.
+I also noticed the [SOF marker](https://en.wikipedia.org/wiki/JPEG#Syntax_and_structure) has Component ID = 0, which is invalid per the JPEG spec. The Color Space field is 65535 (Uncalibrated). There are duplicate [JFIF](https://en.wikipedia.org/wiki/JPEG_File_Interchange_Format) headers. Each of these is a "number that shouldnt exist" in some sense. None of them were the flag.
 
-I ran binwalk, strings, jsteg, outguess, steghide, bit plane analysis, FFT watermarks, pixel LSB, DCT coefficient LSB, F5, Huffman table analysis, EXIF orphan byte mapping. Searched the raw byte stream for flag formats. Tried old flags from the first CTF as decryption keys. Nothing.
+I ran [binwalk](https://en.wikipedia.org/wiki/Binwalk), strings, [jsteg](https://github.com/lukechampine/jsteg), outguess, [steghide](https://en.wikipedia.org/wiki/Steghide), bit plane analysis, [FFT](https://en.wikipedia.org/wiki/Fast_Fourier_transform) watermarks, pixel [LSB](https://en.wikipedia.org/wiki/Bit_numbering#Least_significant_bit), DCT coefficient LSB, [F5](https://en.wikipedia.org/wiki/F5_algorithm), [Huffman table](https://en.wikipedia.org/wiki/Huffman_coding) analysis, [EXIF](https://en.wikipedia.org/wiki/Exif) orphan byte mapping. Searched the raw byte stream for flag formats. Tried old flags from the first CTF as decryption keys. Nothing.
 
 I kept reaching for tools instead of thinking about the format.
 
 ## How JPEGs actually work
 
-A JPEG doesnt store pixels. It stores frequency coefficients. The image gets split into 8x8 blocks, and each block gets a 2D Discrete Cosine Transform:
+A JPEG doesnt store pixels. It stores frequency coefficients. The image gets split into 8x8 blocks, and each block gets a 2D [Discrete Cosine Transform](https://en.wikipedia.org/wiki/Discrete_cosine_transform):
 
 $$F(u,v) = \frac{1}{4} C(u) C(v) \sum_{x=0}^{7} \sum_{y=0}^{7} f(x,y) \cos\frac{(2x+1)u\pi}{16} \cos\frac{(2y+1)v\pi}{16}$$
 
-where $C(0) = \frac{1}{\sqrt{2}}$ and $C(k) = 1$ for $k > 0$.
+where $C(0) = \frac{1}{\sqrt{2}}$ and $C(k) = 1$ for $k > 0$. In practice `scipy.fft.dct` with `norm='ortho'` handles all of this.
 
-This gives you 64 coefficients per block. The one at position $(0,0)$ is the DC coefficient — its basically the average brightness of the block. The other 63 are AC coefficients, representing progressively higher frequency detail. Low frequency stuff like gradients lives near the top-left, fine texture and edges live near the bottom-right.
+This gives you 64 coefficients per block. The one at position $(0,0)$ is the DC coefficient. For DC all the cosine terms are 1, so it simplifies to $F(0,0) = \frac{1}{8}\sum f(x,y)$ — just the average brightness of the block scaled by 8. The other 63 are AC coefficients (the names come from electrical engineering — Direct Current for the constant component, Alternating Current for the oscillating ones), representing progressively higher frequency detail. Low frequency stuff like gradients lives near the top-left, fine texture and edges live near the bottom-right.
 
-These coefficients then get divided by a quantization table $Q$ and rounded:
+These coefficients then get divided by a [quantization table](https://en.wikipedia.org/wiki/Quantization_(image_processing)) $Q$ and rounded:
 
 $$F_q(u,v) = \text{round}\left(\frac{F(u,v)}{Q(u,v)}\right)$$
 
@@ -75,7 +75,7 @@ For the DC coefficient, plugging into the formula above with $u = v = 0$:
 
 $$F(0,0) = \frac{1}{4} \cdot \frac{1}{\sqrt{2}} \cdot \frac{1}{\sqrt{2}} \sum_{x=0}^{7} \sum_{y=0}^{7} f(x,y) = \frac{1}{8} \sum_{x=0}^{7} \sum_{y=0}^{7} f(x,y)$$
 
-Before the DCT, pixel values get level-shifted by 128, so $f(x,y) \in [-128, 127]$. The most extreme case is all pixels at 255 (shifted to 127):
+Before the DCT, pixel values get [level-shifted](https://en.wikipedia.org/wiki/JPEG#Encoding) by 128, so $f(x,y) \in [-128, 127]$. The most extreme case is all pixels at 255 (shifted to 127):
 
 $$F(0,0)_{\max} = \frac{1}{8} \cdot 64 \cdot 127 = 1016$$
 
