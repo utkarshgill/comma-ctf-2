@@ -2,6 +2,8 @@
 
 Second challenge from the comma.ai/tinycorp CTF (originally for NeurIPS). One image, one flag.
 
+![prius](https://github.com/user-attachments/assets/602dbb16-a3af-4278-bfa9-1d0834e8e56a)
+
 The EXIF has a hint:
 
 ```
