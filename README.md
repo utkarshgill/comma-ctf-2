@@ -51,17 +51,37 @@ I kept reaching for tools instead of thinking about the format.
 
 ## How JPEGs actually work
 
-A JPEG doesnt store pixels. It stores frequency coefficients. The image gets split into 8x8 blocks, each block gets a Discrete Cosine Transform, and the resulting values get divided by a quantization table and rounded to integers. Thats what lives in the file.
+A JPEG doesnt store pixels. It stores frequency coefficients. The image gets split into 8x8 blocks, and each block gets a 2D Discrete Cosine Transform:
 
-When you open the image, your viewer does the reverse: multiply by the quantization table, inverse DCT, get pixels back.
+$$F(u,v) = \frac{1}{4} C(u) C(v) \sum_{x=0}^{7} \sum_{y=0}^{7} f(x,y) \cos\frac{(2x+1)u\pi}{16} \cos\frac{(2y+1)v\pi}{16}$$
 
-The key insight is that these coefficients arent arbitrary. They are derived from pixel values through a fixed transform, and pixel values in an 8-bit image are bounded to 0-255. So every coefficient has a theoretical maximum. You cant just put any number in there and have it correspond to a real image.
+where $C(0) = \frac{1}{\sqrt{2}}$ and $C(k) = 1$ for $k > 0$.
 
-Well, you can. The decoder will happily accept it. It just multiplies, runs the inverse DCT, and clips any out-of-range pixels to 0-255. It never validates whether the coefficient was actually achievable. The image displays fine. But mathematically, the number is impossible.
+This gives you 64 coefficients per block. The one at position $(0,0)$ is the DC coefficient — its basically the average brightness of the block. The other 63 are AC coefficients, representing progressively higher frequency detail. Low frequency stuff like gradients lives near the top-left, fine texture and edges live near the bottom-right.
+
+These coefficients then get divided by a quantization table $Q$ and rounded:
+
+$$F_q(u,v) = \text{round}\left(\frac{F(u,v)}{Q(u,v)}\right)$$
+
+Thats what the file stores. When you open the image, the decoder multiplies back by $Q$, runs the inverse DCT, and gets pixels. The quantization step is where information is lost — thats the "lossy" in lossy compression.
+
+The key insight is that these quantized coefficients arent arbitrary. They are derived from pixel values $f(x,y) \in [0, 255]$ through a fixed transform. So every coefficient has a theoretical maximum determined by the math. You cant just put any number in there and have it correspond to a real image.
+
+Well, you can. The decoder will happily accept it — it just multiplies, runs the inverse DCT, and clips any out-of-range pixels to 0-255. It never checks whether the coefficient was actually achievable. The image displays fine. But mathematically, the number is impossible.
 
 ## The bound
 
-For the DC coefficient (position 0,0), the most extreme input is all pixels at 255 or all at 0. After level shifting by -128, the DCT gives a max DC of 1016. This images quantization table divides DC by 2, so the max quantized value is floor(1016/2) = 508.
+For the DC coefficient, plugging into the formula above with $u = v = 0$:
+
+$$F(0,0) = \frac{1}{4} \cdot \frac{1}{\sqrt{2}} \cdot \frac{1}{\sqrt{2}} \sum_{x=0}^{7} \sum_{y=0}^{7} f(x,y) = \frac{1}{8} \sum_{x=0}^{7} \sum_{y=0}^{7} f(x,y)$$
+
+Before the DCT, pixel values get level-shifted by 128, so $f(x,y) \in [-128, 127]$. The most extreme case is all pixels at 255 (shifted to 127):
+
+$$F(0,0)_{\max} = \frac{1}{8} \cdot 64 \cdot 127 = 1016$$
+
+This images quantization table has $Q(0,0) = 2$, so:
+
+$$F_q(0,0)_{\max} = \left\lfloor \frac{1016}{2} \right\rfloor = 508$$
 
 This isnt statistical or approximate. Its arithmetic. 508 is the ceiling.
 
